@@ -1,36 +1,27 @@
+from typing import Literal, Iterable
+
 import torch
-from sparse import SparseTensor, Mapping
+from mapping import Mapping
 import pytest
 
 from unittest import mock
 
 from tests.utils.assert_sys import assert_no_out_arr
-from tests.utils.mock_tensor import MockTensor
+from tests.utils.random_sparse import randint_sparse
 
 
 @assert_no_out_arr
 def test_mapping_repeat_last_dims():
-    tensor_random = SparseTensor(torch.randint(0, 4, (4, 16)), shape=(4, 5, 6, 7))
-    mapping = Mapping.repeat_last_dims(tensor_random, 3, 3)
-
-    sorted_tensor = mapping.create_target()
-    assert (mapping.target.indices == sorted_tensor.indices).all().item()
-    assert mapping.target.shape == (4, 5, 6, 7, 5, 6, 7, 5, 6, 7)
-
-    tensor_test = SparseTensor(
-        torch.tensor(
-            [
-                [0, 0, 0, 1, 1, 2, 2, 2, 3],
-                [0, 0, 1, 0, 3, 1, 3, 3, 2],
-                [2, 3, 1, 2, 3, 1, 2, 3, 1],
-            ]
-        ),
-        shape=(4, 4, 4),
+    tensor_test = torch.tensor(
+        [
+            [0, 0, 0, 1, 1, 2, 2, 2, 3],
+            [0, 0, 1, 0, 3, 1, 3, 3, 2],
+            [2, 3, 1, 2, 3, 1, 2, 3, 1],
+        ]
     )
     mapping_test = Mapping.repeat_last_dims(tensor_test, 2, 2)
-    assert mapping_test.target.shape == (4, 4, 4, 4, 4)
     assert (
-        mapping_test.target.indices
+        mapping_test.target
         == torch.tensor(
             [
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3],
@@ -51,100 +42,33 @@ def test_mapping_repeat_last_dims():
         )
     ).all()
 
-    result = tensor_test[:, :, :, None, None] & tensor_test[:, None, None, :, :]
-    assert result.shape == mapping_test.target.shape
-    assert (result.indices == mapping_test.target.indices).all()
-
-
-@assert_no_out_arr
-def test_mapping_create_from():
-    source = SparseTensor(
-        MockTensor((3, 32), dtype=torch.long), shape=(1024, 1024, 1024)
-    )
-    target = SparseTensor(
-        MockTensor((5, 128), dtype=torch.long), shape=(1024, 1024, 1024, 1024, 1024)
-    )
-    batch = MockTensor((1, 128), dtype=torch.long)
-    mapping = Mapping(source, target, batch)
-
-    values_source = MockTensor((32, 256))
-    values_target = MockTensor((128, 256))
-
-    new_source = mapping.create_source(values_source)
-    new_target = mapping.create_target(values_target)
-
-    assert isinstance(new_source, SparseTensor)
-    assert new_source.shape == source.shape
-    assert id(new_source.indices) == id(source.indices)
-    assert id(new_source.values) == id(values_source)
-
-    assert isinstance(new_target, SparseTensor)
-    assert new_target.shape == target.shape
-    assert id(new_target.indices) == id(target.indices)
-    assert id(new_target.values) == id(values_target)
-
-    new_source = mapping.create_source()
-    new_target = mapping.create_target()
-
-    assert isinstance(new_source, SparseTensor)
-    assert new_source.shape == source.shape
-    assert id(new_source.indices) == id(source.indices)
-    assert new_source.values is None
-
-    assert isinstance(new_target, SparseTensor)
-    assert new_target.shape == target.shape
-    assert id(new_target.indices) == id(target.indices)
-    assert new_target.values is None
-
-
-@assert_no_out_arr
-def test_mapping_is():
-    source = SparseTensor(MockTensor((3, 16), dtype=torch.long), shape=(128, 128, 128))
-    target = SparseTensor(
-        MockTensor((5, 32), dtype=torch.long), shape=(128, 128, 128, 128, 128)
-    )
-    batch = MockTensor((1, 32), dtype=torch.long)
-    mapping = Mapping(source=source, target=target, batch=batch)
-
-    assert mapping.is_source(source)
-    assert not mapping.is_source(target)
-
-    assert not mapping.is_target(source)
-    assert mapping.is_target(target)
-
-    assert id(mapping.source.indices) == id(source.indices)
-    assert mapping.source.shape == (128, 128, 128)
-    assert id(mapping.target.indices) == id(target.indices)
-    assert mapping.target.shape == (128, 128, 128, 128, 128)
-    assert id(mapping._batch) == id(batch)
-
 
 @assert_no_out_arr
 def test_mapping_selector():
-    source = SparseTensor(MockTensor((3, 8), dtype=torch.long), shape=(4, 4, 4))
-    target = SparseTensor(MockTensor((5, 32), dtype=torch.long), shape=(4, 4, 4, 4, 4))
-    batch = MockTensor((3, 32), dtype=torch.long)
+    source = torch.randint(0, 16, (3, 8))
+    target = torch.randint(0, 16, (5, 32))
+    batch = torch.randint(0, 16, (3, 32))
     mapping = Mapping(source, target, batch)
 
     assert len(mapping) == 3
 
-    with mock.patch("sparse.Mapping.Selector", autospec=True) as mock_selector:
+    with mock.patch("mapping.Mapping.Selector", autospec=True) as mock_selector:
         mapping[0]
         mock_selector.assert_called_once_with(mapping, 0)
 
-    with mock.patch("sparse.Mapping.Selector", autospec=True) as mock_selector:
+    with mock.patch("mapping.Mapping.Selector", autospec=True) as mock_selector:
         mapping[2]
         mock_selector.assert_called_once_with(mapping, 2)
 
-    with mock.patch("tests.utils.MockTensor.__getitem__") as mock_getitem:
+    with mock.patch("torch.Tensor.__getitem__") as mock_getitem:
         Mapping.Selector(mapping, 0).batch
         mock_getitem.assert_called_once_with(0)
 
-    with mock.patch("tests.utils.MockTensor.__getitem__") as mock_getitem:
+    with mock.patch("torch.Tensor.__getitem__") as mock_getitem:
         Mapping.Selector(mapping, 1).batch
         mock_getitem.assert_called_once_with(1)
 
-    with mock.patch("tests.utils.MockTensor.__getitem__") as mock_getitem:
+    with mock.patch("torch.Tensor.__getitem__") as mock_getitem:
         Mapping.Selector(mapping, -1).batch
         mock_getitem.assert_called_once_with(-1)
 
@@ -153,3 +77,76 @@ def test_mapping_selector():
 
     with pytest.raises(AssertionError):
         Mapping.Selector(mapping, 3).batch
+
+
+def sparse_to_dense(
+    indices: torch.LongTensor, values: torch.Tensor, shape=Iterable[int]
+) -> torch.Tensor:
+    result = torch.zeros(tuple(shape), dtype=values.dtype)
+    result[tuple(indices)] = values
+    return result
+
+
+def dense_to_sparse(dense: torch.Tensor) -> tuple[torch.LongTensor, torch.Tensor]:
+    indices = dense.nonzero().t()
+    values = dense[tuple(indices)]
+    return indices, values
+
+
+def assert_mapping_reduce_sum(
+    mapping: Mapping | Mapping.Selector,
+    target: torch.Tensor,
+    source: torch.Tensor,
+):
+    _, values = dense_to_sparse(target)
+    result = mapping.reduce(values, "sum")
+    _, expected_result = dense_to_sparse(source)
+    assert (result == expected_result).all()
+
+
+@assert_no_out_arr
+def test_mapping_reduce():
+    torch.manual_seed(0)
+
+    indices, values = randint_sparse((16, 16), min_v=1, ratio=0.5)
+    source = sparse_to_dense(indices, values, (16, 16))
+
+    target = source[:, :, None] * source[:, None, :]
+    result = target.sum(dim=2)
+
+    mapping = Mapping.repeat_last_dims(indices, 1, 2)
+
+    assert_mapping_reduce_sum(mapping, target, result)
+
+    target = source[:, :, None, None] * source[None, None, :, :]
+    result = target.sum(dim=(2, 3))
+
+    mapping = Mapping.repeat_last_dims(indices, 2, 2)
+
+    assert_mapping_reduce_sum(mapping, target, result)
+
+    target = source[:, :, None] * source[:, None, :]
+    result = target.sum(dim=2)
+
+    mapping = Mapping.repeat_last_dims(indices, 1, 2)
+
+    assert_mapping_reduce_sum(mapping[0], target, result)
+
+    target = source[:, :, None] * source[:, None, :]
+    result = target.sum(dim=1)
+
+    mapping = Mapping.repeat_last_dims(indices, 1, 2)
+
+    assert_mapping_reduce_sum(mapping[1], target, result)
+
+
+@assert_no_out_arr
+def test_mapping_broadcast():
+    torch.manual_seed(0)
+
+    batch = torch.randint(0, 64, (1024, 1))
+    values = torch.randint(0, 2048, (64,))
+    mapping = Mapping(
+        torch.randint(0, 64, (1, 64)), torch.randint(0, 1024, (1, 1024)), batch
+    )
+    assert (mapping.broadcast(values) == values[batch[0]]).all()

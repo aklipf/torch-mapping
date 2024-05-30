@@ -1,16 +1,16 @@
 [tool.poetry]
-name = "torch-sparse-tensor"
-version = "0.2.0"
-description = "A sparse tensor framework for Pytorch."
+name = "torch-mapping"
+version = "0.0.1"
+description = "A package to simplify the implementation of MPNN in pytorch"
 authors = ["Astrid Klipfel <astridklipfel@gmail.com>"]
 readme = "README.md"
 
-packages = [{ include = "sparse" }]
+packages = [{ include = "mapping" }]
 
 [tool.poetry.dependencies]
 python = "^3.10"
 numpy = "*"
-torch = "^2"
+torch = "2.0"
 
 [tool.poetry.group.dev]
 optional = true

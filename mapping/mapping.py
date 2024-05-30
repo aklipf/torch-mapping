@@ -1,10 +1,8 @@
 from __future__ import annotations
-from typing import Tuple, Any
+from typing import Tuple, Any, Literal
 
 import torch
 import torch.nn.functional as F
-
-from . import sparse
 
 
 class Mapping:
@@ -26,12 +24,12 @@ class Mapping:
 
     def __init__(
         self,
-        source: sparse.SparseTensor,
-        target: sparse.SparseTensor,
+        source: torch.LongTensor,
+        target: torch.LongTensor,
         batch: torch.LongTensor,
     ):
-        assert isinstance(source, sparse.SparseTensor)
-        assert isinstance(target, sparse.SparseTensor)
+        assert isinstance(source, torch.LongTensor)
+        assert isinstance(target, torch.LongTensor)
         assert batch.ndim == 2 and batch.dtype == torch.long
 
         self._batch = batch
@@ -44,19 +42,42 @@ class Mapping:
     def __getitem__(self, idx: int) -> Mapping.Selector:
         return Mapping.Selector(self, idx)
 
-    @classmethod
-    def repeat_last_dims(
-        cls, source: sparse.SparseTensor, ndim: int = 1, repeat: int = 2
-    ) -> Mapping:
-        boadcasted_indices, mapping = cls._repeat_last_dims(
-            source.indices, ndim, repeat
+    def reduce(
+        self,
+        tensor: torch.Tensor,
+        reduce: Literal["sum", "mean"],
+    ) -> torch.Tensor:
+        assert tensor.shape[0] == self._target.shape[1]
+
+        batch = self.batch
+        while batch.ndim < tensor.ndim:
+            batch.unsqueeze_(-1)
+
+        reduced = torch.zeros(
+            (self._source.shape[1], *tensor.shape[1:]),
+            dtype=tensor.dtype,
+            device=tensor.device,
+        ).scatter_reduce_(
+            dim=0, index=batch.expand_as(tensor), src=tensor, reduce=reduce
         )
 
-        shape = source.shape[:-ndim] + tuple(
-            sum([list(source.shape[-ndim:])] * repeat, [])
-        )
-        target = sparse.SparseTensor(boadcasted_indices, shape=shape, sort=False)
-        return cls(source=source, target=target, batch=mapping)
+        return reduced
+
+    def broadcast(
+        self,
+        tensor: torch.Tensor,
+    ) -> torch.Tensor:
+        assert tensor.shape[0] == self._source.shape[1]
+
+        return tensor[self.batch]
+
+    @classmethod
+    def repeat_last_dims(
+        cls, indices: torch.LongTensor, ndim: int = 1, repeat: int = 2
+    ) -> Mapping:
+        boadcasted_indices, mapping = cls._repeat_last_dims(indices, ndim, repeat)
+
+        return cls(source=indices, target=boadcasted_indices, batch=mapping)
 
     @classmethod
     def _repeat_last_dims(
@@ -111,24 +132,12 @@ class Mapping:
 
         return unique_indices, count
 
-    def is_source(self, tensor: sparse.SparseTensor) -> bool:
-        return id(self._source.indices) == id(tensor.indices)
-
-    def is_target(self, tensor: sparse.SparseTensor) -> bool:
-        return id(self._target.indices) == id(tensor.indices)
-
-    def create_source(self, values: torch.Tensor | None = None) -> sparse.SparseTensor:
-        return self._source.create_shared(values)
-
-    def create_target(self, values: torch.Tensor | None = None) -> sparse.SparseTensor:
-        return self._target.create_shared(values)
-
     @property
-    def source(self) -> sparse.SparseTensor:
+    def source(self) -> torch.LongTensor:
         return self._source
 
     @property
-    def target(self) -> sparse.SparseTensor:
+    def target(self) -> torch.LongTensor:
         return self._target
 
     @property
