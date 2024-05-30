@@ -6,41 +6,28 @@ import torch.nn.functional as F
 
 
 class Mapping:
-    class Selector:
-        def __init__(self, mapping: Mapping, idx: int):
-            assert -len(mapping) < idx < len(mapping)
-            self.mapping = mapping
-            self.idx = idx
-
-        def __getattr__(self, name: str) -> Any:
-            if hasattr(self.mapping, name):
-                return getattr(self.mapping, name)
-
-            raise AttributeError(self, name)
-
-        @property
-        def batch(self) -> torch.LongTensor:
-            return self.mapping._batch[self.idx]
-
     def __init__(
         self,
         source: torch.LongTensor,
         target: torch.LongTensor,
         batch: torch.LongTensor,
+        _selected: int = 0,
     ):
         assert isinstance(source, torch.LongTensor)
         assert isinstance(target, torch.LongTensor)
         assert batch.ndim == 2 and batch.dtype == torch.long
+        assert -batch.shape[0] < _selected < batch.shape[0]
 
         self._batch = batch
         self._source = source
         self._target = target
+        self._selected = _selected
 
     def __len__(self) -> int:
         return self._batch.shape[0]
 
     def __getitem__(self, idx: int) -> Mapping.Selector:
-        return Mapping.Selector(self, idx)
+        return Mapping(self.source, self.target, self._batch, idx)
 
     def reduce(
         self,
@@ -142,4 +129,4 @@ class Mapping:
 
     @property
     def batch(self) -> torch.LongTensor:
-        return self._batch[0]
+        return self._batch[self._selected]

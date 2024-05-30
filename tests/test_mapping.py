@@ -52,31 +52,23 @@ def test_mapping_selector():
 
     assert len(mapping) == 3
 
-    with mock.patch("mapping.Mapping.Selector", autospec=True) as mock_selector:
-        mapping[0]
-        mock_selector.assert_called_once_with(mapping, 0)
-
-    with mock.patch("mapping.Mapping.Selector", autospec=True) as mock_selector:
-        mapping[2]
-        mock_selector.assert_called_once_with(mapping, 2)
-
     with mock.patch("torch.Tensor.__getitem__") as mock_getitem:
-        Mapping.Selector(mapping, 0).batch
+        mapping[0].batch
         mock_getitem.assert_called_once_with(0)
 
     with mock.patch("torch.Tensor.__getitem__") as mock_getitem:
-        Mapping.Selector(mapping, 1).batch
+        mapping[1].batch
         mock_getitem.assert_called_once_with(1)
 
     with mock.patch("torch.Tensor.__getitem__") as mock_getitem:
-        Mapping.Selector(mapping, -1).batch
+        mapping[-1].batch
         mock_getitem.assert_called_once_with(-1)
 
     with pytest.raises(AssertionError):
-        Mapping.Selector(mapping, -3).batch
+        mapping[-3].batch
 
     with pytest.raises(AssertionError):
-        Mapping.Selector(mapping, 3).batch
+        mapping[3].batch
 
 
 def sparse_to_dense(
@@ -94,7 +86,7 @@ def dense_to_sparse(dense: torch.Tensor) -> tuple[torch.LongTensor, torch.Tensor
 
 
 def assert_mapping_reduce_sum(
-    mapping: Mapping | Mapping.Selector,
+    mapping: Mapping,
     target: torch.Tensor,
     source: torch.Tensor,
 ):
@@ -144,9 +136,12 @@ def test_mapping_reduce():
 def test_mapping_broadcast():
     torch.manual_seed(0)
 
-    batch = torch.randint(0, 64, (1024, 1))
+    batch = torch.randint(0, 64, (1024, 3))
     values = torch.randint(0, 2048, (64,))
     mapping = Mapping(
         torch.randint(0, 64, (1, 64)), torch.randint(0, 1024, (1, 1024)), batch
     )
     assert (mapping.broadcast(values) == values[batch[0]]).all()
+    assert (mapping[0].broadcast(values) == values[batch[0]]).all()
+    assert (mapping[1].broadcast(values) == values[batch[1]]).all()
+    assert (mapping[2].broadcast(values) == values[batch[2]]).all()
